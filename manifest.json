@@ -1,0 +1,26 @@
+{
+  "name": "Bookmarks for Youtube",
+  "version": "0.0.1",
+  "manifest_version": 2,
+  "description": "Add bookmark timestamps to videos to skip easily to different sections",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "default_locale": "en",
+  "permissions": [
+    "https://www.youtube.com/watch*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/watch*"
+      ],
+      "js": [
+        "src/inject.js"
+      ]
+    }
+  ],
+  "web_accessible_resources": ["./src/bookmarkBtn.html"]
+}
