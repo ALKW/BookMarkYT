@@ -1,10 +1,14 @@
-var bookmarkBtnObj;
-var bookmarkPopupObj;
-
 var state = {
 	video: undefined,
 	isFullScreen: false,
-	bookmarks: [], //Array of {time: number, name: string}
+	bookmarkBtnObj: undefined,
+	bookmarkPopupObj: undefined,
+	bookmarks: [], // Array of {time: number, name: string, indicator: bookmark icon}
+	flags: { //Flags that the user sets for certain features
+		enabledBookmarkHistory: true,
+		enabledKeyShortcuts: true,
+		enabledProgressBarIndicators: true
+	}
 }
 
 // What to do before the page loads
@@ -22,14 +26,32 @@ function afterLoads(){
 	// Create the popup menu for the bookmark button
 	createBMPopupMenu();
 
+	// create and add previous bookmarks if user has any from their history
+	createPrevBookmarks();
+	addPrevBookmarks();
+
+	// TODO: Add toast message for when the user adds a bookmark
+
 	// Update styles when full screen button is pressed
 	var fullScreenBtn = document.querySelector("button.ytp-fullscreen-button");
 	fullScreenBtn.addEventListener("click", updateStyles);
 	
 	// Add keyboard event handlers
 	document.addEventListener("keydown", keyboardEvents);
-	
+
+	// TODO: Add a listener for when the url changes to know we need to clear and reset
+
 }
+
+/* Styling for popup toasts
+visible
+style: outline: none; position: fixed; box-sizing: border-box; left: 0px; top: 938px; max-width: 288px; max-height: 48px; z-index: 2202;
+class: style-scope yt-notification-action-renderer paper-toast-open
+
+invisble:
+style: outline: none; position: fixed; box-sizing: border-box; left: 0px; top: 938px; max-width: 288px; max-height: 48px; display: none;
+class: style-scope yt-notification-action-renderer
+*/
 
 //////////////////////////////////////
 //			UPDATE FUNCITONS		//
@@ -39,8 +61,77 @@ function updateStyles(){
 	console.log(state.isFullScreen)
 	updateBookmarkMenubtn();
 	updateBookmarkPopup();
+	updateIndicators();
+}
 
-	
+//////////////////////////////////////
+//	BOOKMARK PROGRESS BAR INDICATOR	//
+//////////////////////////////////////
+function createPrevBookmarks(){
+	// TODO: load previous bookmarks in from chrome storage
+}
+
+function addPrevBookmarks(){
+	// TODO: render the previous bookmarks to the screen
+}
+
+function createIndicator(timestamp){
+	const progList = document.querySelector("div.ytp-progress-list");
+
+	const size = state.isFullScreen ? 8 : 5;
+
+	var indicatorDiv = document.createElement("div");
+	indicatorDiv.setAttribute("class", "ytp-play-progress");
+	indicatorDiv.style.background = "#3369e8";
+	indicatorDiv.style.position = "absolute";
+	indicatorDiv.style.zIndex = "36";
+	indicatorDiv.style.left = `${(timestamp / state.video.duration) * 100}%`;
+	indicatorDiv.style.width = `${size}px`;
+	indicatorDiv.style.height = `${size}px`;
+
+	var indicatorButton = document.createElement("div");
+	indicatorButton.setAttribute("class", "ytp-play-progress");
+	indicatorButton.style.background = "#3369e8";
+	indicatorButton.style.border = "none";
+	indicatorButton.style.borderRadius = "50%";
+	indicatorButton.style.display = "none";
+	indicatorButton.style.height = `100%`;
+	indicatorButton.style.position = "absolute";
+	indicatorButton.style.transform = "translateX(-75%) translateY(-75%) scale(2.5)";
+	indicatorButton.style.width = `100%`;
+
+	indicatorDiv.onmouseover = function() {
+		this.children[0].style.display = "";
+	}
+
+	indicatorDiv.onmouseout = function() {
+		this.children[0].style.display = "none";
+	}
+
+	indicatorDiv.onclick = function(){
+		state.video.currentTime = timestamp;
+		console.log(state.video.currentTime);
+	}
+
+ 	indicatorDiv.appendChild(indicatorButton);
+	progList.insertBefore(indicatorDiv, progList.children[0]);
+
+	return indicatorDiv;
+}
+
+function updateIndicators(){
+	if(state.isFullScreen){
+		state.bookmarks.forEach(bm => {
+			bm.indicator.style.height = "8px";
+			bm.indicator.style.width = "8px";
+		});
+	}
+	else{
+		state.bookmarks.forEach(bm => {
+			bm.indicator.style.height = "5px";
+			bm.indicator.style.width = "5px";
+		});
+	}
 }
 
 //////////////////////////////////////
@@ -110,7 +201,7 @@ function createBookmarkMenuBtn(){
 
 	bookmarkMenuBtn.appendChild(bookmarkSvg);
 
-	bookmarkBtnObj = {
+	state.bookmarkBtnObj = {
 		use: use,
 		rect1: rect1,
 		rect2: rect2,
@@ -126,28 +217,28 @@ function createBookmarkMenuBtn(){
 
 	// Add the item to the screen
 	const controls = document.querySelector("div.ytp-left-controls");
-	controls.insertBefore(bookmarkBtnObj.bookmarkBtn, controls.children[3]);
+	controls.insertBefore(state.bookmarkBtnObj.bookmarkBtn, controls.children[3]);
 }
 
 function onClickBookmarkMenuBtn(){
-	if(bookmarkBtnObj.open){
-		bookmarkPopupObj.popup.style.display = "none";
-		bookmarkBtnObj.rect1.setAttributeNS(null, "visibility", "visible");
-		bookmarkBtnObj.open = false;
+	if(state.bookmarkBtnObj.open){
+		state.bookmarkPopupObj.popup.style.display = "none";
+		state.bookmarkBtnObj.rect1.setAttributeNS(null, "visibility", "visible");
+		state.bookmarkBtnObj.open = false;
 		
 	}
 	else{
-		bookmarkPopupObj.popup.style.display = "";
-		bookmarkBtnObj.rect1.setAttributeNS(null, "visibility", "hidden");
-		bookmarkBtnObj.open = true;
+		state.bookmarkPopupObj.popup.style.display = "";
+		state.bookmarkBtnObj.rect1.setAttributeNS(null, "visibility", "hidden");
+		state.bookmarkBtnObj.open = true;
 	}
 }
 
 function offClickBookmarkBtn(event){
-	if (event.target !== bookmarkBtnObj.bookmarkBtn){
-		bookmarkPopupObj.popup.style.display = "none";
-		bookmarkBtnObj.rect1.setAttributeNS(null, "visibility", "visible");
-		bookmarkBtnObj.open = false;
+	if (event.target !== state.bookmarkBtnObj.bookmarkBtn){
+		state.bookmarkPopupObj.popup.style.display = "none";
+		state.bookmarkBtnObj.rect1.setAttributeNS(null, "visibility", "visible");
+		state.bookmarkBtnObj.open = false;
 	}
 }
 
@@ -188,6 +279,7 @@ function createBMPopupMenu(){
 	const bookmarkListBtn = createBMListBtn();
 	const addBookmarkBtn = createAddBMBtn();
 	const editBookmarksBtn = createEditBMBtn();
+	const clearBookmarksBtn = createClearBMBtn();
 
 	// Get the parent of where we are adding the popup
 	const videoDiv = document.querySelector("div.ytp-transparent");
@@ -196,6 +288,7 @@ function createBMPopupMenu(){
 	panelMenu.appendChild(bookmarkListBtn);
 	panelMenu.appendChild(addBookmarkBtn);
 	panelMenu.appendChild(editBookmarksBtn);
+	panelMenu.appendChild(clearBookmarksBtn);
 
 	panel.appendChild(panelMenu);
 
@@ -203,16 +296,16 @@ function createBMPopupMenu(){
 
 	videoDiv.appendChild(popup);
 
-	bookmarkPopupObj = {
+	state.bookmarkPopupObj = {
 		popup: popup,
 		panel: panel,
 		panelMenu: panelMenu,
 		bookmarkListBtn: bookmarkListBtn,
-		///addBookmarkBtn: addBookmarkBtn,
+		addBookmarkBtn: addBookmarkBtn,
+		editBookmarksBtn: editBookmarksBtn,
+		clearBookmarksBtn: clearBookmarksBtn
 	};
 }
-
-
 
 // Button for list of bookmarks
 function createBMListBtn(){
@@ -280,10 +373,28 @@ function createEditBMBtn(){
 	itemText.className = "ytp-menuitem-label";
 	itemText.textContent = "Edit Bookmarks";
 	
-	var ns = 'http://www.w3.org/2000/svg';
-	var itemIcon = document.createElementNS(ns, "svg");
-	
+	menuItem.appendChild(menuSpacer);
+	menuItem.appendChild(itemText);
 
+	return menuItem;
+}
+
+// Button to edit bookmarks
+function createClearBMBtn(){
+	var menuItem = document.createElement("div");
+	menuItem.setAttribute("aria-haspopup", "false");
+	menuItem.setAttribute("role", "menuitem");
+	menuItem.setAttribute("tabindex", "0");
+	menuItem.className = "ytp-menuitem";
+	menuItem.setAttribute("aria-haspopup", "true");
+
+	var menuSpacer = document.createElement("div");
+	menuSpacer.className = "ytp-menuitem-icon";
+
+	var itemText = document.createElement("div");
+	itemText.className = "ytp-menuitem-label";
+	itemText.textContent = "Clear Bookmarks";
+	
 	menuItem.appendChild(menuSpacer);
 	menuItem.appendChild(itemText);
 
@@ -297,20 +408,20 @@ function bmGoto(){
 
 function updateBookmarkPopup(){
 	if(state.isFullScreen){
-		bookmarkPopupObj.popup.style.left = "24px";
-		bookmarkPopupObj.popup.style.width = "361px";
-		bookmarkPopupObj.popup.style.height = "212px";
+		state.bookmarkPopupObj.popup.style.left = "24px";
+		state.bookmarkPopupObj.popup.style.width = "361px";
+		state.bookmarkPopupObj.popup.style.height = "212px";
 
-		bookmarkPopupObj.panel.style.width = "361px";
-		bookmarkPopupObj.panel.style.height = "212px";
+		state.bookmarkPopupObj.panel.style.width = "361px";
+		state.bookmarkPopupObj.panel.style.height = "212px";
 	}
 	else{
-		bookmarkPopupObj.popup.style.left = "12px";
-		bookmarkPopupObj.popup.style.width = "256px";
-		bookmarkPopupObj.popup.style.height = "177px";
+		state.bookmarkPopupObj.popup.style.left = "12px";
+		state.bookmarkPopupObj.popup.style.width = "256px";
+		state.bookmarkPopupObj.popup.style.height = "177px";
 
-		bookmarkPopupObj.panel.style.width = "256px";
-		bookmarkPopupObj.panel.style.height = "177px";
+		state.bookmarkPopupObj.panel.style.width = "256px";
+		state.bookmarkPopupObj.panel.style.height = "177px";
 	}
 }
 
@@ -398,7 +509,7 @@ function addBookmarkKey(){
 //////////////////////////////////////
 function addBookmark(){
 	const time = parseInt(state.video.currentTime);
-	const toInsert = { time: time, name: "defaultName"}
+	const toInsert = { time: time, name: "defaultName", indicator: createIndicator(time) };
 	var inserted = false;
 
 	// The amount of variability between bookmarks
@@ -420,11 +531,9 @@ function addBookmark(){
 
 	if(!inserted){
 		state.bookmarks.splice(state.bookmarks.length, 0, toInsert);
-		console.log("splicing")
+		console.log("splicing added bookmark")
+		console.log(state.bookmarks);
 	}
-		
-	console.log("added bookmark");
-	console.log(state.bookmarks);
 }
 
 //////////////////////////////////////
@@ -436,7 +545,6 @@ chrome.extension.sendMessage({}, function(response) {
 	var readyStateCheckInterval = setInterval(function() {
 		if (document.readyState === "complete") {
 			clearInterval(readyStateCheckInterval);
-			console.log("ON new page")
 			afterLoads()
 		}
 	}, 10);

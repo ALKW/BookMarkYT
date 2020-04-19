@@ -10,7 +10,9 @@
   },
   "default_locale": "en",
   "permissions": [
-    "https://www.youtube.com/watch*"
+    "https://www.youtube.com/watch*",
+    "storage",
+    "tabs"
   ],
   "content_scripts": [
     {
