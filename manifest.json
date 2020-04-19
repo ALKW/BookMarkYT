@@ -10,19 +10,21 @@
   },
   "default_locale": "en",
   "permissions": [
-    "https://www.youtube.com/watch*",
-    "storage",
+    "webNavigation",
     "tabs"
   ],
+  "background": {
+    "scripts": ["src/background.js"],
+    "persistent": false
+  },
   "content_scripts": [
     {
       "matches": [
-        "https://www.youtube.com/watch*"
+        "https://www.youtube.com/*"
       ],
       "js": [
         "src/inject.js"
       ]
     }
-  ],
-  "web_accessible_resources": ["./src/bookmarkBtn.html"]
+  ]
 }

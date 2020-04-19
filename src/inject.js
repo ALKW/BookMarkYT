@@ -12,12 +12,14 @@ var state = {
 }
 
 // What to do before the page loads
-function beforeLoads(){
+function beforeFirstLoad(){
 }
 
 // What to do once the page loads
-function afterLoads(){
-	console.log("Video is loaded");
+function afterFirstLoad(){
+	console.log("First Video is Loaded");
+
+	// Set the video state to the new video that was just loaded
 	state.video = document.querySelector("video.video-stream");
 
 	// Add bookmark menu button to youtube controls
@@ -38,10 +40,29 @@ function afterLoads(){
 	
 	// Add keyboard event handlers
 	document.addEventListener("keydown", keyboardEvents);
-
-	// TODO: Add a listener for when the url changes to know we need to clear and reset
-
 }
+
+function afterLoads(){
+	console.log("Next Video is Loaded");
+
+	// Clear the progress bar indicators
+	clearProgBarIndicators();
+
+	// Set the video state to the new video that was just loaded
+	state.video = document.querySelector("video.video-stream");
+
+	// Load saved bookmarks from chrome storage
+	state.bookmarks = loadSavedBookmarks();
+
+	// Add the loaded bookmarks to the screen
+	addBookmarks();
+
+	// The bookmark button andpopup menu is already drawn and hooked up
+	// Keyboard event handlers are already added as well
+	// Fullscreen redraw handler is hooked up as well
+	// Toast popup is already hooked up
+}
+
 
 /* Styling for popup toasts
 visible
@@ -64,9 +85,16 @@ function updateStyles(){
 	updateIndicators();
 }
 
+
 //////////////////////////////////////
 //	BOOKMARK PROGRESS BAR INDICATOR	//
 //////////////////////////////////////
+function loadSavedBookmarks(){
+	createPrevBookmarks();
+	addPrevBookmarks();
+	return [];
+}
+
 function createPrevBookmarks(){
 	// TODO: load previous bookmarks in from chrome storage
 }
@@ -133,6 +161,13 @@ function updateIndicators(){
 		});
 	}
 }
+
+function clearProgBarIndicators(){
+	state.bookmarks.forEach(bookmark => {
+		bookmark.indicator.remove();
+	});
+}
+
 
 //////////////////////////////////////
 //		BOOKMARK MENU BUTTON		//
@@ -245,6 +280,7 @@ function offClickBookmarkBtn(event){
 function updateBookmarkMenubtn(isFullScreen){
 	return;
 }
+
 
 //////////////////////////////////////
 //		BOOKMARK POPUP MENU			//
@@ -425,6 +461,7 @@ function updateBookmarkPopup(){
 	}
 }
 
+
 //////////////////////////////////////
 //			KEYBOARD SHORTCUTS		//
 //////////////////////////////////////
@@ -504,6 +541,7 @@ function addBookmarkKey(){
 	addBookmark()
 }
 
+
 //////////////////////////////////////
 //			BOOKMARK FUNCTION		//
 //////////////////////////////////////
@@ -536,16 +574,32 @@ function addBookmark(){
 	}
 }
 
+
 //////////////////////////////////////
 //				SCRIPT				//
 //////////////////////////////////////
-beforeLoads();
+beforeFirstLoad();
 
+// After the page loads initially
 chrome.extension.sendMessage({}, function(response) {
 	var readyStateCheckInterval = setInterval(function() {
-		if (document.readyState === "complete") {
+		if (document.readyState === "complete" && location.href.includes("watch")) {
 			clearInterval(readyStateCheckInterval);
-			afterLoads()
+			afterFirstLoad();
 		}
 	}, 10);
 });
+
+// Add an event listener for when the background page sends a message about a url update
+chrome.runtime.onMessage.addListener(
+	function(request, sender, sendResponse) {
+	  // listen for messages sent from background.js
+	  if (request.id === 'NewVideo') {
+		var readyStateCheckInterval = setInterval(function() {
+			if (document.readyState === "complete" && location.href.includes("watch")) {
+				clearInterval(readyStateCheckInterval);
+				afterLoads();
+			}
+		}, 10);
+	  }
+  });
