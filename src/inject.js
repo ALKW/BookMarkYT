@@ -29,14 +29,13 @@ function afterFirstLoad(){
 	createBMPopupMenu();
 
 	// create and add previous bookmarks if user has any from their history
-	createPrevBookmarks();
-	addPrevBookmarks();
+	createSavedBookmarks();
+	addSavedBookmarks();
 
 	// TODO: Add toast message for when the user adds a bookmark
 
-	// Update styles when full screen button is pressed
-	var fullScreenBtn = document.querySelector("button.ytp-fullscreen-button");
-	fullScreenBtn.addEventListener("click", updateStyles);
+	// Update styles when full screen is entered
+	document.addEventListener("fullscreenchange", updateStyles);
 	
 	// Add keyboard event handlers
 	document.addEventListener("keydown", keyboardEvents);
@@ -51,11 +50,8 @@ function afterLoads(){
 	// Set the video state to the new video that was just loaded
 	state.video = document.querySelector("video.video-stream");
 
-	// Load saved bookmarks from chrome storage
+	// Load saved bookmarks from chrome storage and draw on screen
 	state.bookmarks = loadSavedBookmarks();
-
-	// Add the loaded bookmarks to the screen
-	addBookmarks();
 
 	// The bookmark button andpopup menu is already drawn and hooked up
 	// Keyboard event handlers are already added as well
@@ -90,32 +86,35 @@ function updateStyles(){
 //	BOOKMARK PROGRESS BAR INDICATOR	//
 //////////////////////////////////////
 function loadSavedBookmarks(){
-	createPrevBookmarks();
-	addPrevBookmarks();
+	createSavedBookmarks();
+	addSavedBookmarks();
 	return [];
 }
 
-function createPrevBookmarks(){
+function createSavedBookmarks(){
 	// TODO: load previous bookmarks in from chrome storage
 }
 
-function addPrevBookmarks(){
+function addSavedBookmarks(){
 	// TODO: render the previous bookmarks to the screen
 }
 
-function createIndicator(timestamp){
+function createIndicator(time){
 	const progList = document.querySelector("div.ytp-progress-list");
+	const progBar = document.querySelector("div.ytp-scrubber-container");
+	progBar.style.pointerEvents = "none";
 
 	const size = state.isFullScreen ? 8 : 5;
 
 	var indicatorDiv = document.createElement("div");
 	indicatorDiv.setAttribute("class", "ytp-play-progress");
+	indicatorDiv.setAttribute("id", `bm-${time}`)
 	indicatorDiv.style.background = "#3369e8";
-	indicatorDiv.style.position = "absolute";
-	indicatorDiv.style.zIndex = "36";
-	indicatorDiv.style.left = `${(timestamp / state.video.duration) * 100}%`;
-	indicatorDiv.style.width = `${size}px`;
 	indicatorDiv.style.height = `${size}px`;
+	indicatorDiv.style.left = `${(time / state.video.duration) * 100}%`;
+	indicatorDiv.style.position = "absolute";
+	indicatorDiv.style.width = `${size}px`;
+	indicatorDiv.style.zIndex = "43";	
 
 	var indicatorButton = document.createElement("div");
 	indicatorButton.setAttribute("class", "ytp-play-progress");
@@ -127,6 +126,8 @@ function createIndicator(timestamp){
 	indicatorButton.style.position = "absolute";
 	indicatorButton.style.transform = "translateX(-75%) translateY(-75%) scale(2.5)";
 	indicatorButton.style.width = `100%`;
+	indicatorButton.style.zIndex = "43";
+	indicatorButton.style.pointerEvents = "auto";
 
 	indicatorDiv.onmouseover = function() {
 		this.children[0].style.display = "";
@@ -136,9 +137,9 @@ function createIndicator(timestamp){
 		this.children[0].style.display = "none";
 	}
 
-	indicatorDiv.onclick = function(){
-		state.video.currentTime = timestamp;
-		console.log(state.video.currentTime);
+	indicatorButton.onclick = function(){
+		state.video.currentTime = time;
+		console.log("Skipped to bookmark at:", state.video.currentTime);
 	}
 
  	indicatorDiv.appendChild(indicatorButton);
@@ -317,6 +318,12 @@ function createBMPopupMenu(){
 	const editBookmarksBtn = createEditBMBtn();
 	const clearBookmarksBtn = createClearBMBtn();
 
+	// Add listeners for each button click
+	//bookmarkListBtn.addEventListener("click")
+	addBookmarkBtn.addEventListener("click", addBookmark)
+	//editBookmarksBtn.addEventListener("click")
+	clearBookmarksBtn.addEventListener("click", clearBookmarks)
+
 	// Get the parent of where we are adding the popup
 	const videoDiv = document.querySelector("div.ytp-transparent");
 
@@ -483,6 +490,9 @@ function keyboardEvents(event){
 		case 'b':
 			addBookmarkKey();
 			break;
+		case 'd':
+			remBookmarkKey();
+			break;
 		default:
 			return;
 	}
@@ -490,14 +500,12 @@ function keyboardEvents(event){
 
 function findIndex(forward){
 	// Allow for proper skipping forward and backwards multiple times
-	var timeBuffer = 4;
+	var TOLERANCE = 4;
 	if(forward)
-		timeBuffer *= -1;
+		TOLERANCE *= -1;
 
 	// Return index of nearest time stamp bookmark (always rounds up)
-	const time = parseInt(state.video.currentTime) - timeBuffer;
-
-	console.log(time, state.bookmarks.length)
+	const time = parseInt(state.video.currentTime) - TOLERANCE;
 
 	for(i = 0; i < state.bookmarks.length; i++){
 		if(time <= state.bookmarks[i].time){
@@ -516,6 +524,7 @@ function skipForwardKey(){
 
 	if(state.bookmarks.length === 0){
 		console.log("No Bookmarks in List");
+		return;
 	}
 
 	index++;
@@ -531,10 +540,15 @@ function skipBackwardKey(){
 
 	if(state.bookmarks.length === 0){
 		console.log("No Bookmarks in List");
+		return;
 	}
 
 	console.log(`Going back to previous bookmark at ${index}`);
 	state.video.currentTime = state.bookmarks[index].time;
+}
+
+function remBookmarkKey(){
+	remBookmark()
 }
 
 function addBookmarkKey(){
@@ -543,35 +557,66 @@ function addBookmarkKey(){
 
 
 //////////////////////////////////////
-//			BOOKMARK FUNCTION		//
+//			BOOKMARK FUNCTIONS		//
 //////////////////////////////////////
 function addBookmark(){
 	const time = parseInt(state.video.currentTime);
-	const toInsert = { time: time, name: "defaultName", indicator: createIndicator(time) };
-	var inserted = false;
 
 	// The amount of variability between bookmarks
 	// Prevents duplicates
-	var buffer = 2;
+	const TOLERANCE = 10;
 
 	for(i = 0; i < state.bookmarks.length; i++){
-		if(state.bookmarks[i].time - buffer <= time && time <= state.bookmarks[i].time + buffer){
+		if(state.bookmarks[i].time - TOLERANCE <= time && time <= state.bookmarks[i].time + TOLERANCE){
 			console.log("Bookmark already added")
 			return
 		}
 		if(time < state.bookmarks[i].time){
+			const toInsert = { time: time, name: "defaultName", indicator: createIndicator(time) };
 			state.bookmarks.splice(i, 0, toInsert);
 			console.log("added bookmark");
 			console.log(state.bookmarks);
-			return
+			return;
 		}
 	}
 
-	if(!inserted){
-		state.bookmarks.splice(state.bookmarks.length, 0, toInsert);
-		console.log("splicing added bookmark")
-		console.log(state.bookmarks);
+	const toInsert = { time: time, name: "defaultName", indicator: createIndicator(time) };
+	state.bookmarks.splice(state.bookmarks.length, 0, toInsert);
+	console.log("splicing added bookmark")
+	console.log(state.bookmarks);
+}
+
+function clearBookmarks(){
+	for(i = 0; i < state.bookmarks.length; i++){
+		console.log("Deleted Bookmark");
+		// Remove the bookmark indicator node from the screen
+		state.bookmarks[i].indicator.remove();
 	}
+
+	state.bookmarks = [];
+}
+
+function remBookmark(){
+	const TOLERANCE = 3;
+	const time = parseInt(state.video.currentTime);
+
+	// Check if a bookmark is within TOLERANCE
+	for(i = 0; i < state.bookmarks.length; i++){
+		if(time - TOLERANCE <= state.bookmarks[i].time && state.bookmarks[i].time <= time + TOLERANCE){
+			console.log(`Deleted Bookmark at ${time}`);
+
+			// Remove the bookmark indicator node from the screen
+			state.bookmarks[i].indicator.remove();
+		
+			// Remove the bookmark from the list of bookmarks
+			state.bookmarks.splice(i, 1);
+			
+			return;
+		}
+	}
+
+	console.log(`No bookmarks within range ${time} to delete`);
+	return;
 }
 
 
