@@ -11,7 +11,8 @@
   "default_locale": "en",
   "permissions": [
     "webNavigation",
-    "tabs"
+    "tabs",
+    "storage"
   ],
   "background": {
     "scripts": ["src/background.js"],

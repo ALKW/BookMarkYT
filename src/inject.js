@@ -1,9 +1,12 @@
+// Global state variable for the page
 var state = {
 	video: undefined,
+	progBar: undefined,
+	progList: undefined,
 	isFullScreen: false,
 	bookmarkBtnObj: undefined,
 	bookmarkPopupObj: undefined,
-	bookmarks: [], // Array of {time: number, name: string, indicator: bookmark icon}
+	bookmarks: [], // Array of {time: number, name: string, indicator: bookmark icon} objects
 	flags: { //Flags that the user sets for certain features
 		enabledBookmarkHistory: true,
 		enabledKeyShortcuts: true,
@@ -11,16 +14,31 @@ var state = {
 	}
 }
 
-// What to do before the page loads
+//////////////////////////////////////////////
+//	MAIN BEFORE/AFTER PAGE LOADS FUNCITONS	//
+//////////////////////////////////////////////
+
+// What to do before the first page loads
 function beforeFirstLoad(){
+	addOnUpdateListener();
+	addBeforeCloseListener();
+
+	// Load the bookmarks but dont render them
+	loadSavedBookmarks(false);
 }
 
-// What to do once the page loads
+// What to do once the first page loads
 function afterFirstLoad(){
 	console.log("First Video is Loaded");
 
-	// Set the video state to the new video that was just loaded
+	// Set the state variables for commonly reused elements
 	state.video = document.querySelector("video.video-stream");
+	state.progList = document.querySelector("div.ytp-progress-list");
+	state.progBar = document.querySelector("div.ytp-scrubber-container");
+	state.progBar.style.pointerEvents = "none";
+
+	// render the bookmarks as they were loaded before the page rendered
+	renderLoadedBookmarks();
 
 	// Add bookmark menu button to youtube controls
 	createBookmarkMenuBtn();
@@ -28,19 +46,14 @@ function afterFirstLoad(){
 	// Create the popup menu for the bookmark button
 	createBMPopupMenu();
 
-	// create and add previous bookmarks if user has any from their history
-	createSavedBookmarks();
-	addSavedBookmarks();
-
-	// TODO: Add toast message for when the user adds a bookmark
-
 	// Update styles when full screen is entered
-	document.addEventListener("fullscreenchange", updateStyles);
+	document.addEventListener("fullscreenchange", updateOnFullScreenEvent);
 	
 	// Add keyboard event handlers
 	document.addEventListener("keydown", keyboardEvents);
 }
 
+// What to do after loading for every load except the first
 function afterLoads(){
 	console.log("Next Video is Loaded");
 
@@ -49,14 +62,42 @@ function afterLoads(){
 
 	// Set the video state to the new video that was just loaded
 	state.video = document.querySelector("video.video-stream");
+	state.progBar.style.pointerEvents = "none";
 
-	// Load saved bookmarks from chrome storage and draw on screen
-	state.bookmarks = loadSavedBookmarks();
+	// Load saved bookmarks from chrome storage and render them once video meta data is loaded
+	state.video.onloadedmetadata = function(){
+		loadSavedBookmarks(true);
+	}
+}
 
-	// The bookmark button andpopup menu is already drawn and hooked up
-	// Keyboard event handlers are already added as well
-	// Fullscreen redraw handler is hooked up as well
-	// Toast popup is already hooked up
+//////////////////////////////
+//		EVENT LISTENERS		//
+//////////////////////////////
+
+// Add an event listener for when the background page sends a message about a url or tab update
+function addOnUpdateListener(){
+	chrome.runtime.onMessage.addListener(
+		function(request, sender, sendResponse) {
+		// listen for messages sent from background.js
+		if (request.id === 'NewVideo') {
+			var readyStateCheckInterval = setInterval(function() {
+				if (document.readyState === "complete" && location.href.includes("watch")) {
+					clearInterval(readyStateCheckInterval);
+					afterLoads();
+				}
+			}, 10);
+		}
+		if (request.id === 'closed'){
+			sendResponse({ bookmark : state.bookmark, tab: sender.tab});
+		}
+	});
+}
+
+// Event listener for when the tab closes in order to sync users storage to local state
+function addBeforeCloseListener(){
+	window.addEventListener('beforeunload', function (e) {
+		chrome.runtime.sendMessage({type: "sync", bookmarks: state.bookmarks})
+	});
 }
 
 
@@ -73,7 +114,8 @@ class: style-scope yt-notification-action-renderer
 //////////////////////////////////////
 //			UPDATE FUNCITONS		//
 //////////////////////////////////////
-function updateStyles(){
+// Called when the video switches to fullscreen
+function updateOnFullScreenEvent(){
 	state.isFullScreen = !state.isFullScreen;
 	console.log(state.isFullScreen)
 	updateBookmarkMenubtn();
@@ -82,28 +124,40 @@ function updateStyles(){
 }
 
 
-//////////////////////////////////////
-//	BOOKMARK PROGRESS BAR INDICATOR	//
-//////////////////////////////////////
-function loadSavedBookmarks(){
-	createSavedBookmarks();
-	addSavedBookmarks();
-	return [];
+//////////////////////////////////////////////////
+// 		BOOKMARK PROGRESS BAR INDICATORS		//
+//////////////////////////////////////////////////
+// Create the bookmark indicators and render them onto the screen
+function renderLoadedBookmarks(){
+	var firstBM;
+	if(state.bookmarks.length > 0){
+		firstBM = state.bookmarks[0];
+		firstBM.indicator = createIndicator(firstBM.time);
+
+		// Add the node to the screen
+		state.progList.insertBefore(state.bookmarks[0].indicator, state.progList.firstChild);
+	}
+
+	// Start at the second element and copy the first and just change values
+	for(i = 1; i < state.bookmarks.length; i++){
+		// Create the next bookmark indicator
+		state.bookmarks[i].indicator = firstBM.indicator.cloneNode( true );
+
+		// add the on click listeners to them
+		addListenerToIndicator(state.bookmarks[i].indicator, state.bookmarks[i].indicator.firstChild, state.bookmarks[i].time);
+
+		// Update the positioning
+		state.bookmarks[i].indicator.style.left = `${(state.bookmarks[i].time / state.video.duration) * 100}%`;
+
+		// Add the node to the screen
+		state.progList.insertBefore(state.bookmarks[i].indicator, state.progList.firstChild);
+		
+		console.log(`Rendered Bookmark: ${state.bookmarks[i].time}`);
+	}
 }
 
-function createSavedBookmarks(){
-	// TODO: load previous bookmarks in from chrome storage
-}
-
-function addSavedBookmarks(){
-	// TODO: render the previous bookmarks to the screen
-}
-
+// Creates the node for the indicator but DOES NOT add it to the DOM
 function createIndicator(time){
-	const progList = document.querySelector("div.ytp-progress-list");
-	const progBar = document.querySelector("div.ytp-scrubber-container");
-	progBar.style.pointerEvents = "none";
-
 	const size = state.isFullScreen ? 8 : 5;
 
 	var indicatorDiv = document.createElement("div");
@@ -129,25 +183,30 @@ function createIndicator(time){
 	indicatorButton.style.zIndex = "43";
 	indicatorButton.style.pointerEvents = "auto";
 
-	indicatorDiv.onmouseover = function() {
-		this.children[0].style.display = "";
-	}
-
-	indicatorDiv.onmouseout = function() {
-		this.children[0].style.display = "none";
-	}
-
-	indicatorButton.onclick = function(){
-		state.video.currentTime = time;
-		console.log("Skipped to bookmark at:", state.video.currentTime);
-	}
+	addListenerToIndicator(indicatorDiv, indicatorButton, time);
 
  	indicatorDiv.appendChild(indicatorButton);
-	progList.insertBefore(indicatorDiv, progList.children[0]);
 
 	return indicatorDiv;
 }
 
+// Adds events for when the user hovers or clicks on a bookmark indicator
+function addListenerToIndicator(div, btn, time){
+	div.onmouseover = function() {
+		this.firstChild.style.display = "";
+	}
+
+	div.onmouseout = function() {
+		this.firstChild.style.display = "none";
+	}
+
+	btn.onclick = function(){
+		state.video.currentTime = time;
+		console.log("Skipped to bookmark at:", state.video.currentTime);
+	}
+}
+
+// Update the size of the indicator when the video goes fullscreen
 function updateIndicators(){
 	if(state.isFullScreen){
 		state.bookmarks.forEach(bm => {
@@ -163,9 +222,12 @@ function updateIndicators(){
 	}
 }
 
+// Clears all bookmark indicators from the progress bar
 function clearProgBarIndicators(){
 	state.bookmarks.forEach(bookmark => {
-		bookmark.indicator.remove();
+		if(bookmark.indicator != undefined){
+			bookmark.indicator.remove();
+		}
 	});
 }
 
@@ -173,6 +235,7 @@ function clearProgBarIndicators(){
 //////////////////////////////////////
 //		BOOKMARK MENU BUTTON		//
 //////////////////////////////////////
+// Creates the node for the bookmark menu button. Uses youtube styling classes
 function createBookmarkMenuBtn(){
 	var ns = 'http://www.w3.org/2000/svg';
 
@@ -256,6 +319,7 @@ function createBookmarkMenuBtn(){
 	controls.insertBefore(state.bookmarkBtnObj.bookmarkBtn, controls.children[3]);
 }
 
+// What to do when the user clicks on the bookmark button
 function onClickBookmarkMenuBtn(){
 	if(state.bookmarkBtnObj.open){
 		state.bookmarkPopupObj.popup.style.display = "none";
@@ -270,6 +334,7 @@ function onClickBookmarkMenuBtn(){
 	}
 }
 
+// What to do when the user clicks off the bookmark button
 function offClickBookmarkBtn(event){
 	if (event.target !== state.bookmarkBtnObj.bookmarkBtn){
 		state.bookmarkPopupObj.popup.style.display = "none";
@@ -278,7 +343,8 @@ function offClickBookmarkBtn(event){
 	}
 }
 
-function updateBookmarkMenubtn(isFullScreen){
+// Updated the bookmark menu button when going to full screen
+function updateBookmarkMenubtn(){
 	return;
 }
 
@@ -286,8 +352,8 @@ function updateBookmarkMenubtn(isFullScreen){
 //////////////////////////////////////
 //		BOOKMARK POPUP MENU			//
 //////////////////////////////////////
+// Creates the popup menu for the bookmark menu button
 function createBMPopupMenu(){
-	// Add styles to bookmark box
 	var popup = document.createElement("div");
 	popup.setAttribute("class", "ytp-popup ytp-settings-menu");
 	popup.setAttribute("data-layer", "6");
@@ -324,20 +390,16 @@ function createBMPopupMenu(){
 	//editBookmarksBtn.addEventListener("click")
 	clearBookmarksBtn.addEventListener("click", clearBookmarks)
 
-	// Get the parent of where we are adding the popup
-	const videoDiv = document.querySelector("div.ytp-transparent");
-
 	// Add the buttons to the panel menu
 	panelMenu.appendChild(bookmarkListBtn);
 	panelMenu.appendChild(addBookmarkBtn);
 	panelMenu.appendChild(editBookmarksBtn);
 	panelMenu.appendChild(clearBookmarksBtn);
-
 	panel.appendChild(panelMenu);
+	popup.appendChild(panel);
 
-	popup.appendChild(panel)
-
-	videoDiv.appendChild(popup);
+	// Where we add the popup
+	document.querySelector("div.ytp-transparent").appendChild(popup);
 
 	state.bookmarkPopupObj = {
 		popup: popup,
@@ -445,10 +507,11 @@ function createClearBMBtn(){
 }
 
 // Goto a specific bookmark after clicking an item
-function bmGoto(){
+function gotoBookmark(){
 
 }
 
+// Updates the sizing of the popup menu in full screen
 function updateBookmarkPopup(){
 	if(state.isFullScreen){
 		state.bookmarkPopupObj.popup.style.left = "24px";
@@ -472,6 +535,7 @@ function updateBookmarkPopup(){
 //////////////////////////////////////
 //			KEYBOARD SHORTCUTS		//
 //////////////////////////////////////
+// What fires when a key shortcut is pressed
 function keyboardEvents(event){
 	const keyName = event.key;
 
@@ -480,6 +544,7 @@ function keyboardEvents(event){
 		return;
 	}
 
+	// TODO: Add catch for when the user is typing
 	switch(keyName){
 		case ';':
 			skipBackwardKey();
@@ -493,11 +558,19 @@ function keyboardEvents(event){
 		case 'd':
 			remBookmarkKey();
 			break;
+		case '[':
+			printBookmarksInStorageKey();
+			break;
+		case ']':
+			clearBookmarksInStorageKey();
+			break;
+		// TODO: Add undo and redo keys for adding and removing bookmarks
 		default:
 			return;
 	}
 }
 
+// Used for finding the index of the next closest bookmark thats ahead of the current time stamp
 function findIndex(forward){
 	// Allow for proper skipping forward and backwards multiple times
 	var TOLERANCE = 4;
@@ -519,6 +592,7 @@ function findIndex(forward){
 	return state.bookmarks.length - 1;
 }
 
+// Function called when skip to next bookmark shortcut key is pressed
 function skipForwardKey(){
 	var index = findIndex(true)
 
@@ -535,6 +609,7 @@ function skipForwardKey(){
 	state.video.currentTime = state.bookmarks[index].time;
 }
 
+// Function called when skip to previous bookmark shortcut key is pressed
 function skipBackwardKey(){
 	const index = findIndex(false)
 
@@ -547,24 +622,56 @@ function skipBackwardKey(){
 	state.video.currentTime = state.bookmarks[index].time;
 }
 
+// Function called when remove bookmark shortcut key is pressed
 function remBookmarkKey(){
 	remBookmark()
 }
 
+// Function called when add bookmark shortcut key is pressed
 function addBookmarkKey(){
 	addBookmark()
 }
 
+// INTERNAL ONLY - Debug Purposes - prints to screen all contents of storage
+function printBookmarksInStorageKey(){
+	chrome.runtime.sendMessage({type: "query"}, function(response) {
+		console.log(response.message);
+	});
+}
+
+// INTERNAL ONLY - Debug Purposes - clears everything in a users storage
+function clearBookmarksInStorageKey(){
+	chrome.runtime.sendMessage({type: "clearStorage"}, function(response) {
+		console.log(response.message);
+	});
+}
 
 //////////////////////////////////////
 //			BOOKMARK FUNCTIONS		//
 //////////////////////////////////////
-function addBookmark(){
-	const time = parseInt(state.video.currentTime);
+// Load the bookmark data that are saved in chrome storage
+function loadSavedBookmarks(render){
+	state.bookmarks = [];
 
-	// The amount of variability between bookmarks
-	// Prevents duplicates
+	chrome.runtime.sendMessage({type: "query"}, function(response) {
+		bookmarkTimes = response.times;
+
+		bookmarkTimes.forEach(bmTime => {
+			addBookmark(bmTime, false, render);
+		});
+	});
+}
+
+// Add a bookmark and specify whether you want it in chrome storage and/or to render
+function addBookmark(time=undefined, addToStorage=true, render=true){
+	if(!time){
+		time = parseInt(state.video.currentTime);
+	}
+
+	// The amount of variability between bookmarks prevents duplicates
 	const TOLERANCE = 10;
+	let inserted = false;
+	var toInsert;
 
 	for(i = 0; i < state.bookmarks.length; i++){
 		if(state.bookmarks[i].time - TOLERANCE <= time && time <= state.bookmarks[i].time + TOLERANCE){
@@ -572,30 +679,55 @@ function addBookmark(){
 			return
 		}
 		if(time < state.bookmarks[i].time){
-			const toInsert = { time: time, name: "defaultName", indicator: createIndicator(time) };
+			toInsert = { time: time, name: "defaultName", indicator: render ? createIndicator(time) : undefined };
 			state.bookmarks.splice(i, 0, toInsert);
-			console.log("added bookmark");
-			console.log(state.bookmarks);
-			return;
+			inserted = true;
+			break;
 		}
 	}
 
-	const toInsert = { time: time, name: "defaultName", indicator: createIndicator(time) };
-	state.bookmarks.splice(state.bookmarks.length, 0, toInsert);
-	console.log("splicing added bookmark")
+	if(!inserted){
+		toInsert = { time: time, name: "defaultName", indicator: render ? createIndicator(time) : undefined };
+		state.bookmarks.splice(state.bookmarks.length, 0, toInsert);
+	}
+
+	// Add the node to the screen if we want
+	if(render){
+		state.progList.insertBefore(toInsert.indicator, state.progList.firstChild);
+	}
+	
+	// Add the bookmark to storage by telling the background script to add it if we want
+	if(addToStorage){
+		chrome.runtime.sendMessage({type: "add", bookmark: toInsert}, function(response) {
+			console.log("Done with Add");
+		});
+	}
+
+	// TODO: Add toast message for when the user adds a bookmark
+
+	console.log("added bookmark");
 	console.log(state.bookmarks);
 }
 
+// Clear all bookmarks local and in storage
 function clearBookmarks(){
 	for(i = 0; i < state.bookmarks.length; i++){
-		console.log("Deleted Bookmark");
 		// Remove the bookmark indicator node from the screen
-		state.bookmarks[i].indicator.remove();
+		if(state.bookmarks[i].indicator != undefined){
+			state.bookmarks[i].indicator.remove();
+		}
 	}
-
 	state.bookmarks = [];
+
+	// Remove the bookmark from storage if it exists in storage
+	chrome.runtime.sendMessage({type: "clear"}, function(response) {
+		console.log("Done with Clear");
+	});
+
+	console.log("Cleared Bookmarks");
 }
 
+// Remove a bookmark within TOLERANCE range of the current time from local and storage
 function remBookmark(){
 	const TOLERANCE = 3;
 	const time = parseInt(state.video.currentTime);
@@ -603,48 +735,37 @@ function remBookmark(){
 	// Check if a bookmark is within TOLERANCE
 	for(i = 0; i < state.bookmarks.length; i++){
 		if(time - TOLERANCE <= state.bookmarks[i].time && state.bookmarks[i].time <= time + TOLERANCE){
-			console.log(`Deleted Bookmark at ${time}`);
+			console.log(`Removed Bookmark at ${time}`);
+			// Remove the bookmark from storage if it exists in storage
+			chrome.runtime.sendMessage({type: "remove", bookmark: state.bookmarks[i]}, function(response) {
+				console.log("Done with Remove");
 
-			// Remove the bookmark indicator node from the screen
-			state.bookmarks[i].indicator.remove();
-		
-			// Remove the bookmark from the list of bookmarks
-			state.bookmarks.splice(i, 1);
+				// Remove the bookmark indicator node from the screen
+				state.bookmarks[i].indicator.remove();
+
+				// Remove the bookmark from the list of bookmarks
+				state.bookmarks.splice(i, 1);
+			});
 			
 			return;
 		}
 	}
 
 	console.log(`No bookmarks within range ${time} to delete`);
-	return;
 }
 
 
 //////////////////////////////////////
 //				SCRIPT				//
 //////////////////////////////////////
+
+// Before the page first loads
 beforeFirstLoad();
 
 // After the page loads initially
-chrome.extension.sendMessage({}, function(response) {
-	var readyStateCheckInterval = setInterval(function() {
-		if (document.readyState === "complete" && location.href.includes("watch")) {
-			clearInterval(readyStateCheckInterval);
-			afterFirstLoad();
-		}
-	}, 10);
-});
-
-// Add an event listener for when the background page sends a message about a url update
-chrome.runtime.onMessage.addListener(
-	function(request, sender, sendResponse) {
-	  // listen for messages sent from background.js
-	  if (request.id === 'NewVideo') {
-		var readyStateCheckInterval = setInterval(function() {
-			if (document.readyState === "complete" && location.href.includes("watch")) {
-				clearInterval(readyStateCheckInterval);
-				afterLoads();
-			}
-		}, 10);
-	  }
-  });
+var readyStateCheckInterval = setInterval(function() {
+	if (document.readyState === "complete" && location.href.includes("watch")) {
+		clearInterval(readyStateCheckInterval);
+		afterFirstLoad();
+	}
+}, 10);
